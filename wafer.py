@@ -360,11 +360,18 @@ class WaferDisplay(Gtk.DrawingArea):
                                 PangoCairo.show_layout (cr, layout)
                                 cr.restore()
 
-    def openDeviceWindow(self, device):
+    def openDeviceWindow(self, device, i, j, ii, jj):
+        coordX = self.wafer.dieSpacingX*(i - 0.5*(self.wafer.waferCols-1))
+        coordY = self.wafer.dieSpacingY*((self.wafer.waferRows-j-1) - 0.5*(self.wafer.waferRows-1))
+        coordX = coordX + self.wafer.sampleSpacingX*(ii - 0.5*(self.wafer.dieCols-1))
+        coordY = coordY + self.wafer.sampleSpacingY*((self.wafer.dieRows-jj-1) - 0.5*(self.wafer.dieRows-1))
+
         self._("sampleName").set_text(device.name)
-        self._("sampleThick").set_value(device.thick)
-        self._("sampleSizeX").set_value(device.sizeX)
-        self._("sampleSizeY").set_value(device.sizeY)
+        self._("sampleThickAdj").set_value(device.thick)
+        self._("sampleSizeXAdj").set_value(device.sizeX)
+        self._("sampleSizeYAdj").set_value(device.sizeY)
+        self._("sampleX").set_text(str(coordX))
+        self._("sampleY").set_text(str(coordY))
         self._("sampleStatus").set_active(device.status-1)
         self._("sampleNotes").get_buffer().set_text(device.notes)
         dialogResponse = self._("deviceWindow").run()
@@ -503,7 +510,7 @@ class WaferDisplay(Gtk.DrawingArea):
                                         # We've clicked on a sample
                                         hitSample = True
                                         if event.button == 1:
-                                            self.openDeviceWindow(self.wafer.dies[i][j].samples[ii][jj])
+                                            self.openDeviceWindow(self.wafer.dies[i][j].samples[ii][jj], i, j, ii, jj)
                                         if event.button > 1:
                                             self.wafer.dies[i][j].samples[ii][jj].setStatus(event.button-1)
                                         self.queue_draw()
