@@ -234,6 +234,17 @@ class WaferDisplay(Gtk.DrawingArea):
         """Get the GTK object from the builder"""
         return self.builder.get_object(name)
 
+    def onPrintRequest(self, widget):
+        pd = Gtk.PrintOperation()
+        pd.set_n_pages(1)
+        pd.connect("draw_page", self.do_draw_cb_wrapper)
+        result = pd.run(
+            Gtk.PrintOperationAction.PRINT_DIALOG, None)
+        print result  # handle errors etc.
+
+    def do_draw_cb_wrapper(self, operation=None, context=None, page_nr=None):
+        self.do_draw_cb(None, context.get_cairo_context())
+
     def do_draw_cb(self, widget, cr):
         self.get_toplevel().set_title("Wafer Tracker - "+self.wafer.name)
 
@@ -626,6 +637,7 @@ def main():
     builder.get_object("quitMenu").connect('activate', destroy)
     builder.get_object("menuWaferProps").connect('activate', app.editWaferWindow)
     builder.get_object("menuCalcWedge").connect('activate', app.calcWedge)
+    builder.get_object("menuPrint").connect('activate', app.onPrintRequest)
     window.connect_after('destroy', destroy)
     window.show_all()        
     Gtk.main()
