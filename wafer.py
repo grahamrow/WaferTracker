@@ -4,6 +4,7 @@ from gi.repository import Gtk, Gdk, cairo, Pango, PangoCairo
 import math
 import sys, os
 import numpy as np
+from scipy.optimize import curve_fit, leastsq
 import cPickle as pickle
 import xml.etree.cElementTree as et
 
@@ -69,7 +70,11 @@ class Wafer():
 
         self.SampleMargin = 2    # For display only
         self.DieMargin    = 15   # For display only
+
         self.wedge        = 0 # 0 None, 1 Left to Right, 2 Right to left, 3 Bottom to top, 4 top to bottom
+        self.wedgeMx      = 0 
+        self.wedgeMy      = 0
+        self.wedgeC       = 0
 
         # Create the array of dies
         self.dies = [[Die(chr(ord(startingColLetter)+i)+chr(ord(startingRowLetter)+j), self.dieRows, self.dieCols) for j in range(self.waferRows)] for i in range(self.waferCols)]
@@ -126,6 +131,9 @@ class WaferDisplay(Gtk.DrawingArea):
         root.set("dieRows"  ,str(self.wafer.dieRows))
         root.set("dieCols"  ,str(self.wafer.dieCols))
         root.set("wedge"    ,str(self.wafer.wedge))
+        root.set("wedgeMx"    ,str(self.wafer.wedgeMx))
+        root.set("wedgeMy"    ,str(self.wafer.wedgeMy))
+        root.set("wedgeC"     ,str(self.wafer.wedgeC))
         root.set("dieSpacingX",    str(self.wafer.dieSpacingX))
         root.set("dieSpacingY",    str(self.wafer.dieSpacingY))
         root.set("sampleSpacingX", str(self.wafer.sampleSpacingX))
@@ -168,17 +176,18 @@ class WaferDisplay(Gtk.DrawingArea):
         wcols = int(root.get("waferCols"))
         drows = int(root.get("dieRows"))
         dcols = int(root.get("dieCols"))
-        self.wafer = Wafer(root.get("name"), wrows, wcols, drows, dcols)
-        self.wafer.status = int(root.get("status"))
-        self.wafer.wedge  = int(root.get("wedge"))
-        if not root.get("dieSpacingX") is None:
-            self.wafer.dieSpacingX    = float(root.get("dieSpacingX")   ) 
-        if not root.get("dieSpacingY") is None:
-            self.wafer.dieSpacingY    = float(root.get("dieSpacingY")   ) 
-        if not root.get("sampleSpacingX") is None:
-            self.wafer.sampleSpacingX = float(root.get("sampleSpacingX"))
-        if not root.get("sampleSpacingY") is None:
-            self.wafer.sampleSpacingY = float(root.get("sampleSpacingY"))
+
+        self.wafer          = Wafer(root.get("name"), wrows, wcols, drows, dcols)
+        self.wafer.status   = int(root.get("status"))
+        self.wafer.wedge    = int(root.get("wedge"))
+        self.wafer.wedgeMx  = float(root.get("wedgeMx"))
+        self.wafer.wedgeMy  = float(root.get("wedgeMy"))
+        self.wafer.wedgeC   = float(root.get("wedgeC"))
+
+        self.wafer.dieSpacingX    = float(root.get("dieSpacingX")   ) 
+        self.wafer.dieSpacingY    = float(root.get("dieSpacingY")   ) 
+        self.wafer.sampleSpacingX = float(root.get("sampleSpacingX"))
+        self.wafer.sampleSpacingY = float(root.get("sampleSpacingY"))
 
         notes = root.text
         if notes == None:
@@ -360,11 +369,33 @@ class WaferDisplay(Gtk.DrawingArea):
                                 PangoCairo.show_layout (cr, layout)
                                 cr.restore()
 
-    def openDeviceWindow(self, device, i, j, ii, jj):
+    def getSampleCoords(self, i,j,ii,jj):
         coordX = self.wafer.dieSpacingX*(i - 0.5*(self.wafer.waferCols-1))
         coordY = self.wafer.dieSpacingY*((self.wafer.waferRows-j-1) - 0.5*(self.wafer.waferRows-1))
         coordX = coordX + self.wafer.sampleSpacingX*(ii - 0.5*(self.wafer.dieCols-1))
         coordY = coordY + self.wafer.sampleSpacingY*((self.wafer.dieRows-jj-1) - 0.5*(self.wafer.dieRows-1))
+        return [coordX, coordY]
+
+    def getGratingCoords(self, i, j, quadrant):
+        # quadrant is 1-4 as per convention
+        coordX = self.wafer.dieSpacingX*(i - 0.5*(self.wafer.waferCols-1))
+        coordY = self.wafer.dieSpacingY*((self.wafer.waferRows-j-1) - 0.5*(self.wafer.waferRows-1))
+        if quadrant==1:
+            coordX = coordX + 2.00
+            coordY = coordY + 3.05
+        elif quadrant==2:
+            coordX = coordX - 2.00
+            coordY = coordY + 3.05
+        elif quadrant==3:
+            coordX = coordX - 2.00
+            coordY = coordY - 3.05
+        else:
+            coordX = coordX + 2.00
+            coordY = coordY - 3.05
+        return [coordX, coordY]
+
+    def openDeviceWindow(self, device, i, j, ii, jj):
+        coordX, coordY = self.getSampleCoords(i,j,ii,jj)
 
         self._("sampleName").set_text(device.name)
         self._("sampleThickAdj").set_value(device.thick)
@@ -374,6 +405,13 @@ class WaferDisplay(Gtk.DrawingArea):
         self._("sampleY").set_text(str(coordY))
         self._("sampleStatus").set_active(device.status-1)
         self._("sampleNotes").get_buffer().set_text(device.notes)
+        self._("wedgeThick").set_label("N/A")
+
+        # Wedge thickness
+        if (self.wafer.wedgeC != 0.0):
+            t = self.wafer.wedgeMx*coordX + self.wafer.wedgeMy*coordY + self.wafer.wedgeC
+            self._("wedgeThick").set_label("%.2f nm" % t)
+
         dialogResponse = self._("deviceWindow").run()
         if dialogResponse == 0:
             device.thick  = self._("sampleThick").get_value()
@@ -519,6 +557,46 @@ class WaferDisplay(Gtk.DrawingArea):
                          if hitSample == False:
                              self.editDieWindow(self.wafer.dies[i][j])
 
+    def calcWedge(self, event):
+        coords = []
+        thicks = []
+
+        for i in range(self.wafer.waferCols):
+            for j in range(self.wafer.waferRows):
+                if self.wafer.dies[i][j].thickTopRight != 0.0:
+                    coords.append(self.getGratingCoords(i,j,1))
+                    thicks.append(self.wafer.dies[i][j].thickTopRight)
+                if self.wafer.dies[i][j].thickTopLeft != 0.0:
+                    coords.append(self.getGratingCoords(i,j,2))
+                    thicks.append(self.wafer.dies[i][j].thickTopLeft)
+                if self.wafer.dies[i][j].thickBotLeft != 0.0:
+                    coords.append(self.getGratingCoords(i,j,3))
+                    thicks.append(self.wafer.dies[i][j].thickBotLeft)
+                if self.wafer.dies[i][j].thickBotRight != 0.0:
+                    coords.append(self.getGratingCoords(i,j,4))
+                    thicks.append(self.wafer.dies[i][j].thickBotRight)
+
+        coords = np.array(coords)
+        thicks = np.array(thicks)
+
+        def bilinear(v):
+            mx, my, c = v
+            return thicks - (mx*np.array(coords[:,0]) + my*np.array(coords[:,1]) + c)
+
+        v0 = [0.1,-0.1,5.0]
+        popt, success = leastsq(bilinear, v0, maxfev=10000)
+        
+        self._("labelMx").set_label("mx: %g" % popt[0])
+        self._("labelMy").set_label("my: %g" % popt[1])
+        self._("labelC").set_label("c: %g" % popt[2])
+        self.wafer.wedgeMx = popt[0]
+        self.wafer.wedgeMy = popt[1]
+        self.wafer.wedgeC  = popt[2]
+
+        dialogResponse = self._("wedgeWindow").run()
+
+        self._("wedgeWindow").hide()
+
 def destroy(window):
     Gtk.main_quit()
        
@@ -547,6 +625,7 @@ def main():
     builder.get_object("openMenu").connect('activate', app.load)
     builder.get_object("quitMenu").connect('activate', destroy)
     builder.get_object("menuWaferProps").connect('activate', app.editWaferWindow)
+    builder.get_object("menuCalcWedge").connect('activate', app.calcWedge)
     window.connect_after('destroy', destroy)
     window.show_all()        
     Gtk.main()
