@@ -1,0 +1,19 @@
+WaferTracker
+------------
+
+Requirements
+------------
+This code requires python libraries for GTK, which are readily available in Linix package managers or otherwise from http://www.pygtk.org/. The Cairo and Pango libraries must also be availabe. Scipy and Numpy are required for certain functionality (calculating wedge parameters), though these portions of the code could be easily commented out.
+
+File Format
+------------
+WaferTracker makes use of a straightforward XML format for wafer files. While all attempts will be made to retain compatibility in future revisions, please be careful that newer version of the code properly import your old information before saving! Modification of the input code should be relatively easy so either ask me or give it a try yourself!
+
+Known Issues
+------------
+Print functionality is currently confused, at best. Rendering issues may occur if you use different sizes than I've tested the code with.
+
+------------
+------------
+Thanks!
+Graham Rowlands 4/26/2013
